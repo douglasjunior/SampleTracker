@@ -1,5 +1,9 @@
 package com.github.douglasjunior.sampletracker;
 
+import android.support.annotation.NonNull;
+
+import java.util.Arrays;
+
 /**
  * Created by douglas on 23/06/15.
  */
@@ -15,7 +19,7 @@ public class Vector {
     }
 
     // create a vector from an array
-    public Vector(double[] data) {
+    public Vector(@NonNull double... data) {
         N = data.length;
 
         // defensive copy so that client can't alter our copy of data[]
@@ -131,5 +135,20 @@ public class Vector {
 
     public void normalize(double deslocamento) {
         ArrayUtils.normalize(data, deslocamento);
+    }
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) return true;
+        if (!(o instanceof Vector)) return false;
+
+        Vector vector = (Vector) o;
+
+        return Arrays.equals(data, vector.data);
+    }
+
+    @Override
+    public int hashCode() {
+        return Arrays.hashCode(data);
     }
 }

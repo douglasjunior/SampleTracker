@@ -3,12 +3,13 @@ package com.github.douglasjunior.sampletracker;
 import android.content.Context;
 import android.graphics.Canvas;
 import android.graphics.Color;
+import android.graphics.Matrix;
 import android.graphics.Paint;
 import android.graphics.Path;
-import android.graphics.PointF;
-import android.util.AttributeSet;
+import android.graphics.Rect;
+import android.graphics.RectF;
 import android.util.Log;
-import android.view.View;
+import android.view.WindowManager;
 
 import java.util.List;
 
@@ -16,124 +17,138 @@ import java.util.List;
 /**
  * Created by douglas on 19/06/15.
  */
-public class Terrain extends View {
+public class Terrain {
 
-    private PointF center; // centro de rotação (trazeira do trator)
-    private List<PointF> trackerHistory; // array com histórico de pontos
+    private final WindowManager windowManager;
+    private Vector center; // centro de rotação (trazeira do trator)
+    private List<Vector> trackerHistory; // array com histórico de pontos
+
+    private final Rect layout = new Rect();
     private Paint paint;
-    private PointF lastTrackerPoint; // ultima posicao
-    private PointF preLastTrackerPoint; // penultima posição
+    private Paint paint2;
+    private Vector lastPoint; // ultima posicao
+    private Vector preLastPoint; // penultima posição
+    private float trackerWidth;
+    private Navigator navigator;
 
-    public Terrain(Context context) {
-        super(context);
-        init();
-    }
-
-    public Terrain(Context context, AttributeSet attrs) {
-        super(context, attrs);
-        init();
-    }
-
-    public Terrain(Context context, AttributeSet attrs, int defStyle) {
-        super(context, attrs, defStyle);
-        init();
-    }
-
-    private void init() {
-        setBackgroundColor(Color.GREEN);
-
+    public Terrain(Navigator navigator) {
+        this.navigator = navigator;
+        this.windowManager = (WindowManager) navigator.getContext().getSystemService(Context.WINDOW_SERVICE);
         paint = new Paint(Paint.ANTI_ALIAS_FLAG);
-        paint.setStrokeWidth(5);
+        paint.setStrokeWidth(2);
         paint.setColor(Color.BLUE);
-        paint.setStyle(Paint.Style.STROKE);
+        paint.setStyle(Paint.Style.FILL_AND_STROKE);
         paint.setAntiAlias(true);
+
+        paint2 = new Paint(Paint.ANTI_ALIAS_FLAG);
+        paint2.setStrokeWidth(1);
+        paint2.setColor(Color.BLACK);
+        paint2.setStyle(Paint.Style.STROKE);
+        paint2.setAntiAlias(true);
     }
 
-    /**
-     * Desenha o terreno e o caminho percorrido
-     *
-     * @param canvas
-     */
-    @Override
-    protected void onDraw(Canvas canvas) {
-        super.onDraw(canvas);
-        Log.d(getClass().getSimpleName(), "onDraw");
 
-        // toma o centro do trator como sendo o "marco zero" do canvas.
-        canvas.translate(center.x, center.y);
+    public void draw(Canvas canvas) {
+        Log.d(getClass().getSimpleName(), "draw");
+        canvas.save();
+
+        // translate canvas to vehicle positon
+        canvas.translate((float) center.cartesian(0), (float) center.cartesian(1));
+
+        float fieldRotation = 0;
 
         if (trackerHistory.size() > 1) {
-            Path path = new Path();
-            /*
-            Percorre o histórico de posições e desenha o caminho
+             /*
+            Before drawing the way, only takes the last position and finds the angle of rotation of the field.
              */
-            for (int i = 1; i < trackerHistory.size() - 1; i++) {
-                PointF pointAtual = trackerHistory.get(i);
-                PointF pointPrev = trackerHistory.get(i - 1);
-
-                double[] posTratorAtual = convertToTerrainCoordinates(pointAtual);
-                double[] posTratorPrev = convertToTerrainCoordinates(pointPrev);
-
-                path.moveTo((float) posTratorPrev[0], (float) posTratorPrev[1]);
-                path.lineTo((float) posTratorAtual[0], (float) posTratorAtual[1]);
-            }
+            Vector lastPosition = new Vector(convertToTerrainCoordinates(lastPoint));
+            Vector preLastPosition = new Vector(convertToTerrainCoordinates(preLastPoint));
+            float shift = (float) lastPosition.distanceTo(preLastPosition);
 
             /*
-            Após desenhar o caminho, pega somente o vetor da última posição e tenta encontrar o ângulo de rotação.
-             */
-            Vector posTratorAtual = new Vector(convertToTerrainCoordinates(lastTrackerPoint));
-            Vector posTratorPrev = new Vector(convertToTerrainCoordinates(preLastTrackerPoint));
-            Log.d(getClass().getSimpleName(), "posTratorAtual: " + posTratorAtual);
-            Log.d(getClass().getSimpleName(), "posTratorPrev: " + posTratorPrev);
+            Having the last coordinate as a triangle, 'preLastCoord' saves the values of the legs, while 'shift' is the hypotenuse
+            */
+            // If the Y offset is negative, then the opposite side is the Y displacement
+            if (preLastPosition.cartesian(1) < 0) {
+                // dividing the opposite side by hipetenusa, we have the sine of the angle that must be rotated.
+                double sin = preLastPosition.cartesian(1) / shift;
 
-            Vector dirTrator = posTratorAtual.minus(posTratorPrev).direction();
-            Log.d(getClass().getSimpleName(), "dirTrator: " + dirTrator);
-
-            double deslocamento = posTratorAtual.distanceTo(posTratorPrev);
-            Log.d(getClass().getSimpleName(), "deslocamento: " + deslocamento);
-
-            dirTrator.normalize(deslocamento);
-            Log.d(getClass().getSimpleName(), "dirTrator normalizado: " + dirTrator);
-
-            /*
-            Tendo a última coordenada como um triângulo, 'posTratorPrev' guarda os valores dos catetos, enquanto 'deslocamento' é a hipotenusa
-             */
-            double degrees;
-
-            // se o deslocamento de Y for negativo, então o cateto oposto é o deslocamento de Y
-            if (posTratorPrev.cartesian(1) < 0) {
-                // dividindo o cateto oposto pela hipetenusa temos o Seno do Angulo que deve ser rotacionado.
-                double sin = posTratorPrev.cartesian(1) / deslocamento;
-                Log.d(getClass().getSimpleName(), "senAngulo: " + sin);
-
-                // quando Y é negativo, é preciso somar ou subitrair 90 graus, dependendo do valor de X
-                if (posTratorPrev.cartesian(0) < 0) {
-                    // a função Math.asin() calcula o arco radiano para o Seno calculado anteriormente.
-                    // e a função Math.toDegress() converte o radiano para graus de 0 a 360.
-                    degrees = Math.toDegrees(Math.asin(sin)) - 90d;
+                // when Y is negative, it is necessary to add or subtract 90 degrees depending on the value of X
+                // The "Math.asin()" calculates the radian arc to the sine previously calculated.
+                // And the "Math.toDegress()" converts degrees to radians from 0 to 360.
+                if (preLastPosition.cartesian(0) < 0) {
+                    fieldRotation = (float) (Math.toDegrees(Math.asin(sin)) - 90d);
                 } else {
-                    // a função Math.asin() calcula o arco radiano para o Seno calculado anteriormente.
-                    // a função Math.toDegress() converte o radiano para graus de 0 a 360.
-                    // e a função Math.abs() garante que meu valor sempre será positivo
-                    degrees = Math.abs(Math.toDegrees(Math.asin(sin))) + 90d;
+                    fieldRotation = (float) (Math.abs(Math.toDegrees(Math.asin(sin))) + 90d);
                 }
             }
-            // se não, o cateto oposto é o deslocamento de X
+            // if not, the opposite side is the X offset
             else {
-                // dividindo o cateto oposto pela hipetenusa temos o Seno do Angulo que deve ser rotacionado.
-                double senAngulo = posTratorPrev.cartesian(0) / deslocamento;
-                Log.d(getClass().getSimpleName(), "senAngulo: " + senAngulo);
+                // dividing the opposite side by hipetenusa have the sine of the angle that must be rotated.
+                double senAngulo = preLastPosition.cartesian(0) / shift;
 
-                // a função Math.asin() calcula o arco radiano para o Seno calculado anteriormente.
-                // e a função Math.toDegress() converte o radiano para graus de 0 a 360.
-                degrees = Math.toDegrees(Math.asin(senAngulo));
+                // The "Math.asin()" calculates the radian arc to the sine previously calculated.
+                // And the "Math.toDegress()" converts degrees to radians from 0 to 360.
+                fieldRotation = (float) Math.toDegrees(Math.asin(senAngulo));
             }
-
-            Log.d(getClass().getSimpleName(), "angulo: " + degrees);
-
-            canvas.rotate((float) degrees);
-            canvas.drawPath(path, paint);
         }
+
+        final float dpiTrackerWidth = Navigator.meterToDpi(trackerWidth); // width of rect
+
+        final Path positionHistory = new Path(); // to draw the route
+        final Path circle = new Path(); // to draw the positions
+
+        /*
+        Iterate the historical positions and draw the path
+        */
+        for (int i = 1; i < trackerHistory.size(); i++) {
+            Vector currentPosition = new Vector(convertToTerrainCoordinates(trackerHistory.get(i))); // vector with X and Y position
+            Vector lastPosition = new Vector(convertToTerrainCoordinates(trackerHistory.get(i - 1))); // vector with X and Y position
+
+            circle.addCircle((float) currentPosition.cartesian(0), (float) currentPosition.cartesian(1), 3, Path.Direction.CW);
+            circle.addCircle((float) lastPosition.cartesian(0), (float) lastPosition.cartesian(1), 3, Path.Direction.CW);
+
+            if (isInsideOfScreen(currentPosition.cartesian(0), currentPosition.cartesian(1)) ||
+                    isInsideOfScreen(lastPosition.cartesian(0), lastPosition.cartesian(1))) {
+                /*
+                Calcule degree by triangle sides
+                 */
+                float shift = (float) currentPosition.distanceTo(lastPosition);
+                Vector dif = lastPosition.minus(currentPosition);
+                float sin = (float) (dif.cartesian(0) / shift);
+
+                float degress = (float) Math.toDegrees(Math.asin(sin));
+
+                /*
+                Create a Rect to draw displacement between two coordinates
+                 */
+                RectF rect = new RectF();
+                rect.left = (float) (currentPosition.cartesian(0) - (dpiTrackerWidth / 2));
+                rect.right = rect.left + dpiTrackerWidth;
+                rect.top = (float) currentPosition.cartesian(1);
+                rect.bottom = rect.top - shift;
+
+                Path p = new Path();
+                Matrix m = new Matrix();
+                p.addRect(rect, Path.Direction.CCW);
+                m.postRotate(-degress, (float) currentPosition.cartesian(0), (float) currentPosition.cartesian(1));
+                p.transform(m);
+
+                RectF bounds = new RectF();
+                p.computeBounds(bounds, true);
+
+                positionHistory.addPath(p);
+            }
+        }
+
+        // rotates the map to make the route down.
+        canvas.rotate(fieldRotation);
+
+        positionHistory.close();
+        canvas.drawPath(positionHistory, paint);
+        canvas.drawPath(circle, paint2);
+
+        canvas.restore();
     }
 
     /**
@@ -142,9 +157,10 @@ public class Terrain extends View {
      * @param point
      * @return
      */
-    private double[] convertToTerrainCoordinates(PointF point) {
-        double[] coordinate = new double[]{lastTrackerPoint.x - point.x, lastTrackerPoint.y - point.y};
-        return coordinate;
+    private double[] convertToTerrainCoordinates(Vector point) {
+        double x = Navigator.meterToDpi(lastPoint.cartesian(0) - point.cartesian(0));
+        double y = Navigator.meterToDpi(lastPoint.cartesian(1) - point.cartesian(1));
+        return new double[]{x, y};
     }
 
     /**
@@ -152,7 +168,7 @@ public class Terrain extends View {
      *
      * @param center
      */
-    public void setCenter(PointF center) {
+    public void setCenter(Vector center) {
         Log.d(getClass().getSimpleName(), "Center: " + center);
         this.center = center;
     }
@@ -162,11 +178,30 @@ public class Terrain extends View {
      *
      * @param trackerHistory
      */
-    public void setTrackerHistory(List<PointF> trackerHistory) {
-        if (trackerHistory != null && trackerHistory.size() > 1) {
-            lastTrackerPoint = trackerHistory.get(trackerHistory.size() - 1);
-            preLastTrackerPoint = trackerHistory.get(trackerHistory.size() - 2);
-        }
+    public void setTrackerHistory(List<Vector> trackerHistory) {
         this.trackerHistory = trackerHistory;
+    }
+
+    public void setLastPoints(Vector lastPoint, Vector preLastPoint) {
+        this.lastPoint = lastPoint;
+        this.preLastPoint = preLastPoint;
+    }
+
+    public void setTrackerWidth(float trackerWidth) {
+        this.trackerWidth = trackerWidth;
+    }
+
+    private boolean isInsideOfScreen(double x, double y) {
+        x += center.cartesian(0);
+        y += center.cartesian(1);
+        int size = Math.max(windowManager.getDefaultDisplay().getWidth(), windowManager.getDefaultDisplay().getHeight());
+        return x <= size || y <= size;
+    }
+
+    public void layout(int left, int top, int right, int bottom) {
+        layout.left = left;
+        layout.top = top;
+        layout.right = right;
+        layout.bottom = bottom;
     }
 }
