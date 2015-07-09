@@ -5,6 +5,7 @@ import android.graphics.BitmapFactory;
 import android.graphics.Canvas;
 import android.graphics.Paint;
 import android.graphics.Rect;
+import android.graphics.RectF;
 import android.util.Log;
 
 /**
@@ -47,5 +48,16 @@ public class Tracker {
         layout.top = top;
         layout.right = right;
         layout.bottom = bottom;
+    }
+
+    public void layout(RectF trackerLayout) {
+        layout.left = (int) trackerLayout.left;
+        layout.top = (int) trackerLayout.top;
+        layout.right = (int) trackerLayout.right;
+        layout.bottom = (int) trackerLayout.bottom;
+    }
+
+    public Rect getLayout() {
+        return layout;
     }
 }

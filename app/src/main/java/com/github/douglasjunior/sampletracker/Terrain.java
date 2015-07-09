@@ -3,7 +3,6 @@ package com.github.douglasjunior.sampletracker;
 import android.content.Context;
 import android.graphics.Canvas;
 import android.graphics.Color;
-import android.graphics.Matrix;
 import android.graphics.Paint;
 import android.graphics.Path;
 import android.graphics.Rect;
@@ -21,7 +20,6 @@ public class Terrain {
 
     private final WindowManager windowManager;
     private Vector center; // centro de rotação (trazeira do trator)
-    private List<Vector> trackerHistory; // array com histórico de pontos
 
     private final Rect layout = new Rect();
     private Paint paint;
@@ -30,6 +28,7 @@ public class Terrain {
     private Vector preLastPoint; // penultima posição
     private float trackerWidth;
     private Navigator navigator;
+    private List<RectF> trackerHistory;
 
     public Terrain(Navigator navigator) {
         this.navigator = navigator;
@@ -37,7 +36,7 @@ public class Terrain {
         paint = new Paint(Paint.ANTI_ALIAS_FLAG);
         paint.setStrokeWidth(2);
         paint.setColor(Color.BLUE);
-        paint.setStyle(Paint.Style.FILL_AND_STROKE);
+        paint.setStyle(Paint.Style.STROKE);
         paint.setAntiAlias(true);
 
         paint2 = new Paint(Paint.ANTI_ALIAS_FLAG);
@@ -93,8 +92,6 @@ public class Terrain {
             }
         }
 
-        final float dpiTrackerWidth = Navigator.meterToDpi(trackerWidth); // width of rect
-
         final Path positionHistory = new Path(); // to draw the route
         final Path circle = new Path(); // to draw the positions
 
@@ -102,41 +99,14 @@ public class Terrain {
         Iterate the historical positions and draw the path
         */
         for (int i = 1; i < trackerHistory.size(); i++) {
-            Vector currentPosition = new Vector(convertToTerrainCoordinates(trackerHistory.get(i))); // vector with X and Y position
-            Vector lastPosition = new Vector(convertToTerrainCoordinates(trackerHistory.get(i - 1))); // vector with X and Y position
+            RectF lastRect = trackerHistory.get(i);
+            RectF preLastRect = trackerHistory.get(i - 1);
 
-            circle.addCircle((float) currentPosition.cartesian(0), (float) currentPosition.cartesian(1), 3, Path.Direction.CW);
-            circle.addCircle((float) lastPosition.cartesian(0), (float) lastPosition.cartesian(1), 3, Path.Direction.CW);
-
-            if (isInsideOfScreen(currentPosition.cartesian(0), currentPosition.cartesian(1)) ||
-                    isInsideOfScreen(lastPosition.cartesian(0), lastPosition.cartesian(1))) {
-                /*
-                Calcule degree by triangle sides
-                 */
-                float shift = (float) currentPosition.distanceTo(lastPosition);
-                Vector dif = lastPosition.minus(currentPosition);
-                float sin = (float) (dif.cartesian(0) / shift);
-
-                float degress = (float) Math.toDegrees(Math.asin(sin));
-
-                /*
-                Create a Rect to draw displacement between two coordinates
-                 */
-                RectF rect = new RectF();
-                rect.left = (float) (currentPosition.cartesian(0) - (dpiTrackerWidth / 2));
-                rect.right = rect.left + dpiTrackerWidth;
-                rect.top = (float) currentPosition.cartesian(1);
-                rect.bottom = rect.top - shift;
-
+            if (isInsideOfScreen(lastRect) || isInsideOfScreen(preLastRect)) {
                 Path p = new Path();
-                Matrix m = new Matrix();
-                p.addRect(rect, Path.Direction.CCW);
-                m.postRotate(-degress, (float) currentPosition.cartesian(0), (float) currentPosition.cartesian(1));
-                p.transform(m);
-
-                RectF bounds = new RectF();
-                p.computeBounds(bounds, true);
-
+                p.addRect(lastRect, Path.Direction.CW);
+                p.addRect(preLastRect, Path.Direction.CW);
+                p.close();
                 positionHistory.addPath(p);
             }
         }
@@ -144,11 +114,22 @@ public class Terrain {
         // rotates the map to make the route down.
         canvas.rotate(fieldRotation);
 
-        positionHistory.close();
         canvas.drawPath(positionHistory, paint);
         canvas.drawPath(circle, paint2);
 
         canvas.restore();
+    }
+
+    private boolean isInsideOfScreen(RectF rect) {
+        return isInsideOfScreen(rect.left, rect.top) || isInsideOfScreen(rect.left, rect.bottom) ||
+                isInsideOfScreen(rect.right, rect.top) || isInsideOfScreen(rect.right, rect.bottom);
+    }
+
+    private boolean isInsideOfScreen(double x, double y) {
+        x += center.cartesian(0);
+        y += center.cartesian(1);
+        int size = Math.max(windowManager.getDefaultDisplay().getWidth(), windowManager.getDefaultDisplay().getHeight());
+        return x <= size || y <= size;
     }
 
     /**
@@ -178,7 +159,7 @@ public class Terrain {
      *
      * @param trackerHistory
      */
-    public void setTrackerHistory(List<Vector> trackerHistory) {
+    public void setTrackerHistory(List<RectF> trackerHistory) {
         this.trackerHistory = trackerHistory;
     }
 
@@ -191,12 +172,6 @@ public class Terrain {
         this.trackerWidth = trackerWidth;
     }
 
-    private boolean isInsideOfScreen(double x, double y) {
-        x += center.cartesian(0);
-        y += center.cartesian(1);
-        int size = Math.max(windowManager.getDefaultDisplay().getWidth(), windowManager.getDefaultDisplay().getHeight());
-        return x <= size || y <= size;
-    }
 
     public void layout(int left, int top, int right, int bottom) {
         layout.left = left;
